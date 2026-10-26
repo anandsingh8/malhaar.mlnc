@@ -45,6 +45,10 @@ export interface Alumni {
   graduation_year: string;
   bio: string;
   image_url: string;
+  user_id?: string;
+  domain?: string;
+  email?: string;
+  phone_number?: string;
 }
 
 export interface CustomSection {
@@ -512,6 +516,46 @@ const defaultSiteContent: SiteContent[] = [
   {
     content_key: "live_status_text",
     content_value: "Season Auditions Live"
+  },
+  {
+    content_key: "developer_name",
+    content_value: "Lead Technical Systems Architect"
+  },
+  {
+    content_key: "developer_chapter",
+    content_value: "Malhaar Tech Command Chapter"
+  },
+  {
+    content_key: "about_developer",
+    content_value: "Responsible for full-stack engineering, secure local/server persistence layers, fine-grained point evaluations ledger desks, and password-protected cabinet gates."
+  },
+  {
+    content_key: "developer_picture",
+    content_value: ""
+  },
+  {
+    content_key: "vision_title",
+    content_value: "Our Musical & Cultural Vision"
+  },
+  {
+    content_key: "vision_text",
+    content_value: "Empowering every student performer to synthesize classical traditions with modern music technologies, creating an inclusive, high-impact platform for lifetime creative expression."
+  },
+  {
+    content_key: "vision_picture",
+    content_value: ""
+  },
+  {
+    content_key: "thanks_name",
+    content_value: "Faculty Mentors & Advisory Board"
+  },
+  {
+    content_key: "thanks_text",
+    content_value: "Heartfelt gratitude to our founding mentors, campus student council, and dedicated alumni whose unwavering support and guidance make Malhaar possible every step of the way."
+  },
+  {
+    content_key: "thanks_picture",
+    content_value: ""
   }
 ];
 
@@ -1063,6 +1107,133 @@ export class MockDatabase {
 
   saveActiveMonth(month: string): void {
     this.setStorageItem('active_month', month);
+  }
+
+  /**
+   * Generates a complete comprehensive JSON backup of all 21 database tables.
+   */
+  getFullBackup(): Record<string, any> {
+    return {
+      _meta: {
+        app: 'MALHAAR MUSIC SOCIETY',
+        exported_at: new Date().toISOString(),
+        version: '1.0'
+      },
+      profiles: this.getProfiles(),
+      performance: this.getPerformance(),
+      notices: this.getNotices(),
+      events: this.getEvents(),
+      achievements: this.getAchievements(),
+      merchandise: this.getMerchandise(),
+      media_folders: this.getMediaFolders(),
+      core_members: this.getCoreMembers(),
+      core_performance: this.getCorePerformance(),
+      timetable: this.getTimetable(),
+      monthly_targets: this.getMonthlyTargets(),
+      suggestions: this.getSuggestions(),
+      site_content: this.getSiteContent(),
+      alumni: this.getAlumni(),
+      custom_sections: this.getCustomSections(),
+      attendance_sessions: this.getAttendanceSessions(),
+      attendance_records: this.getAttendanceRecords(),
+      svara_practice_materials: this.getSvaraPracticeMaterials(),
+      knowledge_items: this.getKnowledgeItems(),
+      alumni_messages: this.getAlumniMessages(),
+      active_month: this.getActiveMonth()
+    };
+  }
+
+  /**
+   * Safely parses and restores a master JSON backup file into local storage & server sync.
+   * Supports 'replace' (full table overwrite) and 'merge' (upsert by unique ID) modes.
+   */
+  restoreBackup(
+    backupData: Record<string, any>,
+    mode: 'replace' | 'merge' = 'replace'
+  ): { success: boolean; restoredCounts: Record<string, number>; error?: string } {
+    if (!backupData || typeof backupData !== 'object' || Array.isArray(backupData)) {
+      return { success: false, restoredCounts: {}, error: 'The uploaded file is not a valid JSON object structure.' };
+    }
+
+    const tableKeys = [
+      'profiles',
+      'performance',
+      'notices',
+      'events',
+      'achievements',
+      'merchandise',
+      'media_folders',
+      'core_members',
+      'core_performance',
+      'timetable',
+      'monthly_targets',
+      'suggestions',
+      'site_content',
+      'alumni',
+      'custom_sections',
+      'attendance_sessions',
+      'attendance_records',
+      'svara_practice_materials',
+      'knowledge_items',
+      'alumni_messages',
+      'active_month'
+    ];
+
+    const restoredCounts: Record<string, number> = {};
+    let totalRestored = 0;
+
+    tableKeys.forEach(k => {
+      // Check both 'k' and 'malhaar_' + k (in case raw localStorage dump was uploaded)
+      const incomingVal = backupData[k] !== undefined ? backupData[k] : backupData[`malhaar_${k}`];
+      if (incomingVal !== undefined && incomingVal !== null) {
+        if (mode === 'merge' && Array.isArray(incomingVal)) {
+          // Merge arrays using unique record IDs
+          const currentArr: any[] = this.getStorageItem<any[]>(k, []);
+          const idKey = k === 'site_content' ? 'content_key' : (k === 'performance' ? 'user_id' : (k === 'core_performance' ? 'core_id' : 'id'));
+          const mergedMap = new Map<string, any>();
+
+          currentArr.forEach(item => {
+            const idVal = item && typeof item === 'object' ? item[idKey] : null;
+            if (idVal) {
+              mergedMap.set(String(idVal), item);
+            }
+          });
+
+          incomingVal.forEach(item => {
+            const idVal = item && typeof item === 'object' ? item[idKey] : null;
+            if (idVal) {
+              const existing = mergedMap.get(String(idVal));
+              mergedMap.set(String(idVal), existing ? { ...existing, ...item } : item);
+            } else {
+              mergedMap.set(Math.random().toString(36), item);
+            }
+          });
+
+          const finalArr = Array.from(mergedMap.values());
+          this.setStorageItem(k, finalArr);
+          restoredCounts[k] = finalArr.length;
+          totalRestored++;
+        } else {
+          // Replace mode or non-array value
+          this.setStorageItem(k, incomingVal);
+          restoredCounts[k] = Array.isArray(incomingVal) ? incomingVal.length : 1;
+          totalRestored++;
+        }
+      }
+    });
+
+    if (totalRestored === 0) {
+      return {
+        success: false,
+        restoredCounts: {},
+        error: 'No recognizable Malhaar database tables found in the JSON file. Please ensure the file contains valid keys such as profiles, timetable, events, notices, etc.'
+      };
+    }
+
+    // Immediately trigger server sync flush so changes are immediately persisted to backend/db.json
+    this._flushPendingSync();
+
+    return { success: true, restoredCounts };
   }
 }
 
